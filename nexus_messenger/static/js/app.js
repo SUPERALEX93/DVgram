@@ -1,382 +1,164 @@
-// Main app functionality
-let socket;
-let currentChannelId = null;
-let currentServerId = null;
-let currentDMUserId = null;
-let typingTimeout;
+let socket, currentServerId = null, currentChannelId = null, currentChannelType = 'text', currentDMUserId = null, allUsers = [], allServers = [], typingTimeout = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize Socket.IO
     socket = io();
-    
-    // Load initial data
-    loadServers();
-    loadUsers();
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Socket events
-    setupSocketEvents();
-    
-    // Default to home (DMs)
-    selectHome();
+    socket.on('connect', () => console.log('Connected'));
+    socket.on('new_message', (d) => { if (d.channel_id === currentChannelId && currentChannelType === 'text') { appendMessage(d); scrollToBottom(); }});
+    socket.on('new_private_message', (d) => { if (currentDMUserId && (d.sender_id === currentDMUserId || d.recipient_id === currentDMUserId)) { appendMessage(d); scrollToBottom(); }});
+    socket.on('user_online', (d) => updateUserStatus(d.user_id, true));
+    socket.on('user_offline', (d) => updateUserStatus(d.user_id, false));
+    socket.on('user_typing', (d) => { if (d.channel_id === currentChannelId) showTypingIndicator(d.username); });
+    socket.on('server_created', () => loadServers());
+    socket.on('channel_created', (d) => { if (d.server_id === currentServerId) loadServer(currentServerId).then(s => renderChannelsList(s.text_channels, s.voice_channels)); });
+    loadUsers(); loadServers(); setupEventListeners();
 });
 
-function setupEventListeners() {
-    // Message input
-    const messageInput = document.getElementById('message-input');
-    const sendBtn = document.getElementById('send-btn');
-    
-    sendBtn.addEventListener('click', sendMessage);
-    
-    messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendMessage();
-        } else {
-            handleTyping();
-        }
-    });
-    
-    // User search
-    const userSearch = document.getElementById('user-search');
-    userSearch.addEventListener('input', (e) => {
-        filterUsers(e.target.value);
-    });
-    
-    // Voice controls
-    const muteBtn = document.getElementById('mute-btn');
-    const deafenBtn = document.getElementById('deafen-btn');
-    
-    muteBtn.addEventListener('click', () => {
-        muteBtn.classList.toggle('active');
-        muteBtn.textContent = muteBtn.classList.contains('active') ? '🔇' : '🎤';
-    });
-    
-    deafenBtn.addEventListener('click', () => {
-        deafenBtn.classList.toggle('active');
-        deafenBtn.textContent = deafenBtn.classList.contains('active') ? '🔇' : '🔊';
+async function loadUsers() { try { const r = await fetch('/api/users'); allUsers = await r.json(); renderUsersList(allUsers); } catch(e){console.error(e);} }
+async function loadServers() { try { const r = await fetch('/api/servers'); allServers = await r.json(); renderServersList(); } catch(e){console.error(e);} }
+async function loadServer(id) { try { const r = await fetch(`/api/server/${id}`); return await r.json(); } catch(e){return null;} }
+async function loadMessages(cid) { try { const r = await fetch(`/api/messages/channel/${cid}`); return await r.json(); } catch(e){return [];} }
+async function loadPrivateMessages(uid) { try { const r = await fetch(`/api/messages/private/${uid}`); return await r.json(); } catch(e){return [];} }
+
+function renderServersList() {
+    const c = document.getElementById('servers-container'); c.innerHTML = '';
+    allServers.forEach(s => {
+        const b = document.createElement('button'); b.className = 'server-btn'; b.dataset.serverId = s.id;
+        b.innerHTML = `<div class="server-icon" style="background:${s.icon_color};width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;">${s.name.charAt(0)}</div>`;
+        b.onclick = () => selectServer(s.id); c.appendChild(b);
     });
 }
 
-function setupSocketEvents() {
-    socket.on('connected', (data) => {
-        console.log('Connected:', data);
-    });
-    
-    socket.on('new_message', (message) => {
-        if (currentChannelId && !currentDMUserId) {
-            appendMessage(message, false);
-            scrollToBottom();
-        }
-    });
-    
-    socket.on('new_dm_message', (message) => {
-        if (currentDMUserId) {
-            appendMessage(message, message.sender.id === parseInt(localStorage.getItem('userId')));
-            scrollToBottom();
-        }
-    });
-    
-    socket.on('user_typing', (data) => {
-        const typingIndicator = document.getElementById('typing-indicator');
-        typingIndicator.textContent = `${data.username} печатает...`;
-        
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-            typingIndicator.textContent = '';
-        }, 3000);
+function renderUsersList(users) {
+    const c = document.getElementById('users-list'); c.innerHTML = '';
+    users.filter(u => u.id !== window.currentUser.id).forEach(u => {
+        const i = document.createElement('div'); i.className = 'user-item'; i.dataset.userId = u.id;
+        i.innerHTML = `<div class="user-avatar-small">${u.username.charAt(0).toUpperCase()}<div class="${u.is_online?'online-indicator':'offline-indicator'}"></div></div><span>${u.username}</span>`;
+        i.onclick = () => openDM(u.id, u.username); c.appendChild(i);
     });
 }
 
-async function loadServers() {
-    try {
-        const response = await fetch('/api/servers');
-        const servers = await response.json();
-        
-        const container = document.getElementById('servers-container');
-        container.innerHTML = '';
-        
-        servers.forEach(server => {
-            const serverEl = createServerElement(server);
-            container.appendChild(serverEl);
-        });
-    } catch (error) {
-        console.error('Error loading servers:', error);
+function renderChannelsList(tc, vc) {
+    const tc_c = document.getElementById('text-channels-list'), vc_c = document.getElementById('voice-channels-list');
+    tc_c.innerHTML = ''; vc_c.innerHTML = '';
+    tc.forEach(c => { const i = document.createElement('div'); i.className = 'channel-item'; i.dataset.channelId = c.id; i.dataset.type = 'text';
+        i.innerHTML = '<span class="channel-icon">#</span><span>'+c.name+'</span>'; i.onclick = () => selectTextChannel(c.id, c.name); tc_c.appendChild(i); });
+    vc.forEach(c => { const i = document.createElement('div'); i.className = 'channel-item'; i.dataset.channelId = c.id; i.dataset.type = 'voice';
+        i.innerHTML = '<span class="channel-icon">🔊</span><span>'+c.name+'</span>'; i.onclick = () => joinVoiceChannel(c.id, c.name); vc_c.appendChild(i); });
+}
+
+function appendMessage(m) {
+    const c = document.getElementById('messages-list'), t = new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}), u = m.sender_username||'Unknown';
+    const el = document.createElement('div'); el.className = 'message';
+    el.innerHTML = `<div class="message-avatar">${u.charAt(0).toUpperCase()}</div><div class="message-content"><div class="message-header"><span class="message-author">${u}</span><span class="message-time">${t}</span></div><div class="message-text">${escapeHtml(m.content)}</div></div>`;
+    c.appendChild(el);
+}
+function clearMessages() { document.getElementById('messages-list').innerHTML = ''; }
+function scrollToBottom() { document.getElementById('messages-container').scrollTop = document.getElementById('messages-container').scrollHeight; }
+
+function updateUserStatus(uid, online) {
+    const i = document.querySelector(`.user-item[data-user-id="${uid}"]`);
+    if(i) { const ind = i.querySelector('.online-indicator,.offline-indicator'); if(ind) ind.className = online ? 'online-indicator' : 'offline-indicator'; }
+    const u = allUsers.find(x => x.id === uid); if(u) u.is_online = online;
+}
+
+async function selectServer(sid) {
+    document.querySelectorAll('.server-btn').forEach(b => { b.classList.remove('active'); if(b.dataset.serverId == sid) b.classList.add('active'); });
+    currentServerId = sid; currentDMUserId = null; socket.emit('join_server', {server_id: sid});
+    const s = await loadServer(sid);
+    if(s) {
+        document.getElementById('current-server-name').textContent = s.name;
+        document.getElementById('channels-section').style.display = 'block';
+        document.getElementById('users-section').style.display = 'none';
+        renderChannelsList(s.text_channels, s.voice_channels);
+        if(s.text_channels.length > 0) selectTextChannel(s.text_channels[0].id, s.text_channels[0].name);
     }
 }
 
-async function loadUsers() {
-    try {
-        const response = await fetch('/api/users');
-        const users = await response.json();
-        
-        const container = document.getElementById('users-list');
-        container.innerHTML = '';
-        
-        const currentUserId = parseInt(localStorage.getItem('userId'));
-        
-        users.forEach(user => {
-            if (user.id !== currentUserId) {
-                const userEl = createUserElement(user);
-                container.appendChild(userEl);
-            }
-        });
-    } catch (error) {
-        console.error('Error loading users:', error);
-    }
+async function selectTextChannel(cid, name) {
+    if(currentChannelId && currentChannelType === 'text') socket.emit('leave_text_channel', {channel_id: currentChannelId});
+    currentChannelId = cid; currentChannelType = 'text';
+    socket.emit('join_text_channel', {channel_id: cid});
+    document.querySelectorAll('.channel-item').forEach(i => { i.classList.remove('active'); if(i.dataset.channelId == cid && i.dataset.type === 'text') i.classList.add('active'); });
+    document.getElementById('chat-name').textContent = '# ' + name;
+    clearMessages(); const msgs = await loadMessages(cid); msgs.forEach(m => appendMessage(m)); scrollToBottom();
 }
 
-function createServerElement(server) {
-    const el = document.createElement('div');
-    el.className = 'server-icon';
-    el.style.backgroundColor = server.icon_color;
-    el.title = server.name;
-    el.innerHTML = `<span>${server.name.charAt(0)}</span>`;
-    
-    el.addEventListener('click', () => selectServer(server));
-    
-    return el;
+async function openDM(uid, name) {
+    currentDMUserId = uid; currentChannelType = 'dm';
+    document.querySelectorAll('.user-item').forEach(i => { i.classList.remove('active'); if(i.dataset.userId == uid) i.classList.add('active'); });
+    document.getElementById('current-server-name').textContent = '@' + name;
+    document.getElementById('channels-section').style.display = 'none';
+    document.getElementById('users-section').style.display = 'block';
+    document.getElementById('chat-name').textContent = '@' + name;
+    clearMessages(); const msgs = await loadPrivateMessages(uid); msgs.forEach(m => appendMessage(m)); scrollToBottom();
 }
 
-function createUserElement(user) {
-    const el = document.createElement('div');
-    el.className = 'user-item';
-    el.dataset.userId = user.id;
-    el.innerHTML = `
-        <div class="user-avatar">${user.username.charAt(0).toUpperCase()}</div>
-        <div class="user-info">
-            <div class="username">${user.username}</div>
-            <div class="user-status online">Онлайн</div>
-        </div>
-    `;
-    
-    el.addEventListener('click', () => selectDM(user));
-    
-    return el;
+async function joinVoiceChannel(cid, name) {
+    if(currentChannelId && currentChannelType === 'voice') socket.emit('leave_voice_channel', {});
+    currentChannelId = cid; currentChannelType = 'voice';
+    socket.emit('join_voice_channel', {channel_id: cid});
+    document.getElementById('voice-panel').style.display = 'flex';
+    document.getElementById('voice-channel-name').textContent = name;
 }
 
-function selectHome() {
-    document.querySelectorAll('.server-icon').forEach(el => el.classList.remove('active'));
-    document.querySelector('.home-icon').classList.add('active');
-    
-    currentServerId = null;
-    currentChannelId = null;
-    currentDMUserId = null;
-    
-    document.getElementById('sidebar-title').textContent = 'Личные сообщения';
-    document.getElementById('current-channel-name').textContent = 'Выберите пользователя';
-    document.getElementById('current-channel-desc').textContent = 'Для начала общения выберите пользователя слева';
-    document.getElementById('messages-wrapper').innerHTML = '';
-}
-
-function selectServer(server) {
-    document.querySelectorAll('.server-icon').forEach(el => el.classList.remove('active'));
-    event.target.closest('.server-icon').classList.add('active');
-    
-    currentServerId = server.id;
-    currentDMUserId = null;
-    
-    document.getElementById('sidebar-title').textContent = 'Участники';
-    
-    // Load server details and select first text channel
-    loadServerDetails(server);
-}
-
-async function loadServerDetails(server) {
-    try {
-        const response = await fetch(`/api/server/${server.id}`);
-        const serverData = await response.json();
-        
-        // Update members list
-        const container = document.getElementById('users-list');
-        container.innerHTML = '';
-        
-        serverData.members.forEach(member => {
-            const userEl = createUserElement(member);
-            container.appendChild(userEl);
-        });
-        
-        // Select first text channel
-        const textChannel = serverData.channels.find(c => c.type === 'text');
-        if (textChannel) {
-            selectChannel(textChannel, serverData);
-        }
-    } catch (error) {
-        console.error('Error loading server details:', error);
-    }
-}
-
-function selectChannel(channel, serverData) {
-    currentChannelId = channel.id;
-    currentDMUserId = null;
-    
-    const channelIcon = channel.type === 'voice' ? '🔊' : '#';
-    const channelDesc = channel.type === 'voice' ? 'Голосовой канал' : 'Текстовый канал';
-    
-    document.getElementById('current-channel-name').textContent = channel.name;
-    document.getElementById('current-channel-desc').textContent = channelDesc;
-    
-    if (channel.type === 'voice') {
-        showVoicePanel(channel.name);
-        document.getElementById('messages-wrapper').innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">Голосовые каналы не поддерживают текстовые сообщения</div>';
-    } else {
-        hideVoicePanel();
-        loadMessages(channel.id);
-    }
-    
-    // Leave previous channel room
-    if (socket.connected) {
-        socket.emit('leave_channel', { channel_id: currentChannelId });
-    }
-    
-    // Join new channel room
-    socket.emit('join_channel', { channel_id: channel.id });
-}
-
-function selectDM(user) {
-    currentDMUserId = user.id;
-    currentChannelId = null;
-    
-    document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-    document.querySelector(`.user-item[data-user-id="${user.id}"]`)?.classList.add('active');
-    
-    document.getElementById('sidebar-title').textContent = 'Личные сообщения';
-    document.getElementById('current-channel-name').textContent = user.username;
-    document.getElementById('current-channel-desc').textContent = 'Личная переписка';
-    
-    hideVoicePanel();
-    loadDMMessages(user.id);
-    
-    // Join DM room
-    socket.emit('join_dm', { user_id: user.id });
-}
-
-async function loadMessages(channelId) {
-    try {
-        const response = await fetch(`/api/messages/${channelId}`);
-        const messages = await response.json();
-        
-        const wrapper = document.getElementById('messages-wrapper');
-        wrapper.innerHTML = '';
-        
-        messages.forEach(msg => {
-            appendMessage(msg, msg.sender.id === parseInt(localStorage.getItem('userId')));
-        });
-        
-        scrollToBottom();
-    } catch (error) {
-        console.error('Error loading messages:', error);
-    }
-}
-
-async function loadDMMessages(userId) {
-    try {
-        const response = await fetch(`/api/dm/${userId}`);
-        const messages = await response.json();
-        
-        const wrapper = document.getElementById('messages-wrapper');
-        wrapper.innerHTML = '';
-        
-        messages.forEach(msg => {
-            appendMessage(msg, msg.is_self);
-        });
-        
-        scrollToBottom();
-    } catch (error) {
-        console.error('Error loading DM messages:', error);
-    }
-}
-
-function appendMessage(msg, isSelf) {
-    const wrapper = document.getElementById('messages-wrapper');
-    const messageEl = document.createElement('div');
-    messageEl.className = `message ${isSelf ? 'message-self' : ''}`;
-    
-    const time = new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    
-    messageEl.innerHTML = `
-        <div class="message-avatar">${msg.sender.username.charAt(0).toUpperCase()}</div>
-        <div class="message-content">
-            <div class="message-header">
-                <span class="message-author">${msg.sender.username}</span>
-                <span class="message-time">${time}</span>
-            </div>
-            <div class="message-text">${escapeHtml(msg.content)}</div>
-        </div>
-    `;
-    
-    wrapper.appendChild(messageEl);
-}
+function leaveVoiceChannel() { socket.emit('leave_voice_channel', {}); currentChannelId = null; document.getElementById('voice-panel').style.display = 'none'; }
 
 function sendMessage() {
-    const input = document.getElementById('message-input');
-    const content = input.value.trim();
-    
-    if (!content) return;
-    
-    const messageData = {
-        content: content,
-        channel_id: currentChannelId,
-        dm_recipient_id: currentDMUserId
+    const inp = document.getElementById('message-input'), content = inp.value.trim();
+    if(!content) return;
+    if(currentDMUserId) socket.emit('send_private_message', {content, recipient_id: currentDMUserId});
+    else if(currentChannelId && currentChannelType === 'text') socket.emit('send_message', {content, channel_id: currentChannelId});
+    inp.value = '';
+}
+
+function showTypingIndicator(u) { document.getElementById('typing-indicator').textContent = u + ' печатает...'; }
+function hideTypingIndicator() { document.getElementById('typing-indicator').textContent = ''; }
+
+async function createServer(name, color) {
+    try {
+        const r = await fetch('/api/server', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, icon_color: color})});
+        const d = await r.json(); if(r.ok) { await loadServers(); selectServer(d.server.id); closeModal('create-server-modal'); } else alert(d.error);
+    } catch(e) { alert('Ошибка'); }
+}
+
+async function createChannel(name, type) {
+    if(!currentServerId) return;
+    try {
+        const ep = type === 'text' ? '/api/text-channel' : '/api/voice-channel';
+        const r = await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({server_id: currentServerId, name})});
+        const d = await r.json(); if(r.ok) { const s = await loadServer(currentServerId); renderChannelsList(s.text_channels, s.voice_channels); closeModal('create-channel-modal'); } else alert(d.error);
+    } catch(e) { alert('Ошибка'); }
+}
+
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function setupEventListeners() {
+    const inp = document.getElementById('message-input');
+    inp.addEventListener('keypress', e => { if(e.key === 'Enter') sendMessage(); else { if(currentChannelId) { socket.emit('typing_start',{channel_id:currentChannelId}); clearTimeout(typingTimeout); typingTimeout = setTimeout(()=>socket.emit('typing_stop',{channel_id:currentChannelId}),2000); }}});
+    document.getElementById('send-btn').onclick = sendMessage;
+    document.querySelector('.home-btn').onclick = () => {
+        document.querySelectorAll('.server-btn').forEach(b=>b.classList.remove('active')); document.querySelector('.home-btn').classList.add('active');
+        currentServerId = null; currentDMUserId = null;
+        document.getElementById('current-server-name').textContent = 'Личные сообщения';
+        document.getElementById('channels-section').style.display = 'none'; document.getElementById('users-section').style.display = 'block';
+        document.getElementById('chat-name').textContent = '# выберите-пользователя'; clearMessages();
     };
-    
-    socket.emit('send_message', messageData);
-    input.value = '';
-    
-    // Clear typing indicator
-    document.getElementById('typing-indicator').textContent = '';
-}
-
-function handleTyping() {
-    socket.emit('typing', {
-        channel_id: currentChannelId,
-        dm_recipient_id: currentDMUserId
+    document.getElementById('add-server-btn').onclick = () => openModal('create-server-modal');
+    document.getElementById('create-server-form').onsubmit = e => { e.preventDefault(); createServer(document.getElementById('server-name').value.trim(), document.getElementById('server-color').value); };
+    document.querySelectorAll('.add-channel-btn').forEach(b => b.onclick = () => {
+        if(!currentServerId) { alert('Выберите сервер'); return; }
+        document.getElementById('channel-modal-title').textContent = b.dataset.type === 'text' ? 'Создать текстовый канал' : 'Создать голосовой канал';
+        document.getElementById('create-channel-form').dataset.type = b.dataset.type; openModal('create-channel-modal');
     });
+    document.getElementById('create-channel-form').onsubmit = e => { e.preventDefault(); createChannel(document.getElementById('channel-name').value.trim(), e.target.dataset.type); };
+    document.querySelectorAll('.modal-overlay,.cancel-btn').forEach(el => el.onclick = e => { e.target.closest('.modal').style.display = 'none'; });
+    document.getElementById('close-voice-btn').onclick = leaveVoiceChannel;
+    document.getElementById('disconnect-voice-btn').onclick = leaveVoiceChannel;
+    document.getElementById('mute-btn').onclick = function() { this.classList.toggle('active'); };
+    document.getElementById('deafen-btn').onclick = function() { this.classList.toggle('active'); };
+    document.getElementById('user-search').oninput = e => { const q = e.target.value.toLowerCase(); renderUsersList(allUsers.filter(u => u.id !== window.currentUser.id && u.username.toLowerCase().includes(q))); };
+    document.getElementById('logout-btn').onclick = async () => { await fetch('/logout',{method:'POST'}); window.location.href = '/'; };
 }
 
-function scrollToBottom() {
-    const container = document.getElementById('messages-container');
-    container.scrollTop = container.scrollHeight;
-}
-
-function filterUsers(query) {
-    const users = document.querySelectorAll('.user-item');
-    const lowerQuery = query.toLowerCase();
-    
-    users.forEach(user => {
-        const username = user.querySelector('.username').textContent.toLowerCase();
-        if (username.includes(lowerQuery)) {
-            user.style.display = 'flex';
-        } else {
-            user.style.display = 'none';
-        }
-    });
-}
-
-function showVoicePanel(channelName) {
-    const panel = document.getElementById('voice-panel');
-    panel.querySelector('.voice-header span').textContent = `🎤 ${channelName}`;
-    panel.classList.add('active');
-}
-
-function hideVoicePanel() {
-    document.getElementById('voice-panel').classList.remove('active');
-}
-
-function closeVoicePanel() {
-    hideVoicePanel();
-}
-
-function disconnectVoice() {
-    hideVoicePanel();
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Store user ID for message comparison
-localStorage.setItem('userId', '{{ user_id }}');
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }

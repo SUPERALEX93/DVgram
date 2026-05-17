@@ -7,89 +7,149 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="app-page">
-    <!-- Server Sidebar -->
-    <aside class="server-sidebar">
+    <!-- Левая панель серверов -->
+    <aside class="servers-sidebar">
         <div class="server-list">
-            <div class="server-icon home-icon" title="Личные сообщения">
-                <span>📩</span>
-            </div>
-            <div class="server-separator"></div>
+            <button class="server-btn home-btn" title="Личные сообщения" data-type="dm">
+                <div class="server-icon">🏠</div>
+            </button>
+            <div class="server-divider"></div>
             <div id="servers-container">
-                <!-- Servers will be loaded here -->
+                <!-- Сервера будут загружены здесь -->
             </div>
-        </div>
-        <div class="user-profile">
-            <div class="user-avatar">{{ username[0].upper() }}</div>
-            <div class="user-info">
-                <div class="username">{{ username }}</div>
-                <div class="user-status online"></div>
-            </div>
-            <button class="logout-btn" onclick="logout()" title="Выйти">🚪</button>
+            <button class="server-btn add-server-btn" id="add-server-btn" title="Создать сервер">
+                <div class="server-icon add-icon">+</div>
+            </button>
         </div>
     </aside>
 
-    <!-- DM / Members Sidebar -->
-    <aside class="dm-sidebar">
+    <!-- Панель каналов/пользователей -->
+    <aside class="channels-sidebar">
         <div class="sidebar-header">
-            <h2 id="sidebar-title">Личные сообщения</h2>
+            <h2 id="current-server-name">Личные сообщения</h2>
         </div>
-        <div class="search-box">
-            <input type="text" id="user-search" placeholder="Поиск пользователей...">
+        
+        <div id="channels-section" class="channels-section" style="display: none;">
+            <div class="section-header">
+                <span>Текстовые каналы</span>
+                <button class="btn-icon add-channel-btn" data-type="text" title="Добавить канал">+</button>
+            </div>
+            <div id="text-channels-list" class="channels-list"></div>
+            
+            <div class="section-header" style="margin-top: 20px;">
+                <span>Голосовые каналы</span>
+                <button class="btn-icon add-channel-btn" data-type="voice" title="Добавить канал">+</button>
+            </div>
+            <div id="voice-channels-list" class="channels-list"></div>
         </div>
-        <div id="users-list" class="users-list">
-            <!-- Users will be loaded here -->
+        
+        <div id="users-section" class="users-section">
+            <div class="section-header">
+                <span>Пользователи</span>
+                <input type="text" id="user-search" class="search-input" placeholder="Поиск...">
+            </div>
+            <div id="users-list" class="users-list"></div>
+        </div>
+        
+        <div class="current-user-panel">
+            <div class="user-avatar" id="current-user-avatar">{{ user.username[0].upper() if user else '?' }}</div>
+            <div class="user-info">
+                <span class="username" id="current-username">{{ user.username if user else 'Гость' }}</span>
+                <span class="status-text" id="current-status">В сети</span>
+            </div>
+            <button class="btn-icon logout-btn" id="logout-btn" title="Выйти">🚪</button>
         </div>
     </aside>
 
-    <!-- Main Chat Area -->
+    <!-- Основная область чата -->
     <main class="chat-main">
-        <header class="chat-header">
-            <div class="chat-header-left">
-                <span class="channel-icon">#</span>
-                <div>
-                    <h3 id="current-channel-name">general</h3>
-                    <p id="current-channel-desc">Текстовый канал</p>
-                </div>
+        <div class="chat-header">
+            <div class="chat-title">
+                <span id="chat-name"># general</span>
+                <span id="chat-description" class="chat-description"></span>
             </div>
-            <div class="chat-header-right">
-                <div class="typing-indicator" id="typing-indicator"></div>
-            </div>
-        </header>
-
-        <div class="messages-container" id="messages-container">
-            <div class="messages-wrapper" id="messages-wrapper">
-                <!-- Messages will be loaded here -->
+            <div class="chat-actions">
+                <div id="typing-indicator" class="typing-indicator"></div>
             </div>
         </div>
-
+        
+        <div class="messages-container" id="messages-container">
+            <div id="messages-list" class="messages-list">
+                <!-- Сообщения будут загружены здесь -->
+            </div>
+        </div>
+        
         <div class="message-input-area">
             <div class="message-input-wrapper">
-                <input type="text" id="message-input" placeholder="Написать сообщение..." autocomplete="off">
-                <button class="send-btn" id="send-btn">➤</button>
+                <input type="text" id="message-input" class="message-input" placeholder="Написать сообщение..." autocomplete="off">
+                <button class="btn-send" id="send-btn">➤</button>
             </div>
         </div>
     </main>
 
-    <!-- Voice Channel Panel (hidden by default) -->
-    <aside class="voice-panel" id="voice-panel">
-        <div class="voice-header">
-            <span>🎤 Голосовой канал</span>
-            <button class="close-voice-btn" onclick="closeVoicePanel()">×</button>
+    <!-- Панель голосового канала -->
+    <aside class="voice-panel" id="voice-panel" style="display: none;">
+        <div class="voice-panel-header">
+            <span id="voice-channel-name">Голосовой канал</span>
+            <button class="btn-icon close-voice-btn" id="close-voice-btn">×</button>
         </div>
-        <div class="voice-content">
-            <div class="voice-status">
-                <div class="pulse-indicator"></div>
-                <span>Подключено к голосовому каналу</span>
-            </div>
-            <div class="voice-controls">
-                <button class="voice-control-btn" id="mute-btn" title="Выключить микрофон">🎤</button>
-                <button class="voice-control-btn" id="deafen-btn" title="Отключить звук">🔊</button>
-                <button class="voice-control-btn disconnect" onclick="disconnectVoice()" title="Отключиться">📞</button>
-            </div>
+        <div class="voice-controls">
+            <button class="voice-control-btn" id="mute-btn" title="Выключить микрофон">🎤</button>
+            <button class="voice-control-btn" id="deafen-btn" title="Отключить звук">🎧</button>
+            <button class="voice-control-btn disconnect-btn" id="disconnect-voice-btn" title="Отключиться">📴</button>
+        </div>
+        <div class="voice-users" id="voice-users">
+            <!-- Пользователи в канале -->
         </div>
     </aside>
 
+    <!-- Модальное окно создания сервера -->
+    <div class="modal" id="create-server-modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <h3>Создать сервер</h3>
+            <form id="create-server-form">
+                <div class="form-group">
+                    <label for="server-name">Название сервера</label>
+                    <input type="text" id="server-name" placeholder="Введите название" required>
+                </div>
+                <div class="form-group">
+                    <label for="server-color">Цвет иконки</label>
+                    <input type="color" id="server-color" value="#5865F2">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary cancel-btn">Отмена</button>
+                    <button type="submit" class="btn-primary">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания канала -->
+    <div class="modal" id="create-channel-modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <h3 id="channel-modal-title">Создать канал</h3>
+            <form id="create-channel-form">
+                <div class="form-group">
+                    <label for="channel-name">Название канала</label>
+                    <input type="text" id="channel-name" placeholder="Введите название" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary cancel-btn">Отмена</button>
+                    <button type="submit" class="btn-primary">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        window.currentUser = {
+            id: {{ user.id }},
+            username: "{{ user.username }}"
+        };
+    </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

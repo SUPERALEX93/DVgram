@@ -1,34 +1,36 @@
-// Auth functionality
+// ==================== АВТОРИЗАЦИЯ ====================
+
 document.addEventListener('DOMContentLoaded', () => {
-    const loginTab = document.querySelector('[data-tab="login"]');
-    const registerTab = document.querySelector('[data-tab="register"]');
+    // Переключение между вкладками
+    const tabs = document.querySelectorAll('.auth-tab');
+    const forms = document.querySelectorAll('.auth-form');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetTab = tab.dataset.tab;
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            forms.forEach(f => f.classList.remove('active'));
+            
+            tab.classList.add('active');
+            document.getElementById(`${targetTab}-form`).classList.add('active');
+            
+            // Очистка ошибок
+            document.querySelectorAll('.error-message').forEach(el => {
+                el.classList.remove('show');
+                el.textContent = '';
+            });
+        });
+    });
+    
+    // Форма входа
     const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    
-    // Tab switching
-    loginTab.addEventListener('click', () => {
-        loginTab.classList.add('active');
-        registerTab.classList.remove('active');
-        loginForm.classList.add('active');
-        registerForm.classList.remove('active');
-        hideError('login-error');
-        hideError('register-error');
-    });
-    
-    registerTab.addEventListener('click', () => {
-        registerTab.classList.add('active');
-        loginTab.classList.remove('active');
-        registerForm.classList.add('active');
-        loginForm.classList.remove('active');
-        hideError('login-error');
-        hideError('register-error');
-    });
-    
-    // Login form submission
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
         const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
+        const errorEl = document.getElementById('login-error');
         
         try {
             const response = await fetch('/login', {
@@ -42,18 +44,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 window.location.href = '/app';
             } else {
-                showError('login-error', data.error || 'Ошибка входа');
+                errorEl.textContent = data.error || 'Ошибка входа';
+                errorEl.classList.add('show');
             }
         } catch (error) {
-            showError('login-error', 'Ошибка подключения к серверу');
+            errorEl.textContent = 'Ошибка соединения с сервером';
+            errorEl.classList.add('show');
         }
     });
     
-    // Register form submission
+    // Форма регистрации
+    const registerForm = document.getElementById('register-form');
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
         const username = document.getElementById('register-username').value.trim();
         const password = document.getElementById('register-password').value;
+        const errorEl = document.getElementById('register-error');
         
         try {
             const response = await fetch('/register', {
@@ -67,25 +74,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 window.location.href = '/app';
             } else {
-                showError('register-error', data.error || 'Ошибка регистрации');
+                errorEl.textContent = data.error || 'Ошибка регистрации';
+                errorEl.classList.add('show');
             }
         } catch (error) {
-            showError('register-error', 'Ошибка подключения к серверу');
+            errorEl.textContent = 'Ошибка соединения с сервером';
+            errorEl.classList.add('show');
         }
     });
 });
-
-function showError(elementId, message) {
-    const errorEl = document.getElementById(elementId);
-    errorEl.textContent = message;
-    errorEl.classList.add('show');
-}
-
-function hideError(elementId) {
-    const errorEl = document.getElementById(elementId);
-    errorEl.classList.remove('show');
-}
-
-function logout() {
-    window.location.href = '/logout';
-}
