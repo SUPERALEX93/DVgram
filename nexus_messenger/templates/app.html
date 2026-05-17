@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Messenger</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="app-page">
+    <!-- Server Sidebar -->
+    <aside class="server-sidebar">
+        <div class="server-list">
+            <div class="server-icon home-icon" title="Личные сообщения">
+                <span>📩</span>
+            </div>
+            <div class="server-separator"></div>
+            <div id="servers-container">
+                <!-- Servers will be loaded here -->
+            </div>
+        </div>
+        <div class="user-profile">
+            <div class="user-avatar">{{ username[0].upper() }}</div>
+            <div class="user-info">
+                <div class="username">{{ username }}</div>
+                <div class="user-status online"></div>
+            </div>
+            <button class="logout-btn" onclick="logout()" title="Выйти">🚪</button>
+        </div>
+    </aside>
+
+    <!-- DM / Members Sidebar -->
+    <aside class="dm-sidebar">
+        <div class="sidebar-header">
+            <h2 id="sidebar-title">Личные сообщения</h2>
+        </div>
+        <div class="search-box">
+            <input type="text" id="user-search" placeholder="Поиск пользователей...">
+        </div>
+        <div id="users-list" class="users-list">
+            <!-- Users will be loaded here -->
+        </div>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main class="chat-main">
+        <header class="chat-header">
+            <div class="chat-header-left">
+                <span class="channel-icon">#</span>
+                <div>
+                    <h3 id="current-channel-name">general</h3>
+                    <p id="current-channel-desc">Текстовый канал</p>
+                </div>
+            </div>
+            <div class="chat-header-right">
+                <div class="typing-indicator" id="typing-indicator"></div>
+            </div>
+        </header>
+
+        <div class="messages-container" id="messages-container">
+            <div class="messages-wrapper" id="messages-wrapper">
+                <!-- Messages will be loaded here -->
+            </div>
+        </div>
+
+        <div class="message-input-area">
+            <div class="message-input-wrapper">
+                <input type="text" id="message-input" placeholder="Написать сообщение..." autocomplete="off">
+                <button class="send-btn" id="send-btn">➤</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Voice Channel Panel (hidden by default) -->
+    <aside class="voice-panel" id="voice-panel">
+        <div class="voice-header">
+            <span>🎤 Голосовой канал</span>
+            <button class="close-voice-btn" onclick="closeVoicePanel()">×</button>
+        </div>
+        <div class="voice-content">
+            <div class="voice-status">
+                <div class="pulse-indicator"></div>
+                <span>Подключено к голосовому каналу</span>
+            </div>
+            <div class="voice-controls">
+                <button class="voice-control-btn" id="mute-btn" title="Выключить микрофон">🎤</button>
+                <button class="voice-control-btn" id="deafen-btn" title="Отключить звук">🔊</button>
+                <button class="voice-control-btn disconnect" onclick="disconnectVoice()" title="Отключиться">📞</button>
+            </div>
+        </div>
+    </aside>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
