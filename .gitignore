@@ -1,0 +1,31 @@
+```
+# Environment variables
+.env
+.env.local
+*.env.*
+
+# Cookies and temporary data
+nexus_messenger/cookies.txt
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+
+# Build artifacts
+dist/
+build/
+*.pyc
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+```
